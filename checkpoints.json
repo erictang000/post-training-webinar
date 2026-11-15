@@ -1,0 +1,14 @@
+{
+  "checkpoints": {
+    "sft": "tinker://c141cb11-d89a-5665-9174-29c70b57b856:train:0/weights/sft",
+    "rl": "tinker://4a1920a0-55d2-56af-a077-703581877e22:train:0/weights/rl"
+  },
+  "scores": {
+    "0. base model": 0.57,
+    "2. SFT": 0.8,
+    "4. RL (from SFT)": 0.88,
+    "5a. OPD (35B-A3B teacher)": 0.89,
+    "5b. OPSD (self + answer key)": 0.84,
+    "5c. MOPD (math + chat)": 0.9
+  }
+}
