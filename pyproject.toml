@@ -1,0 +1,19 @@
+[project]
+name = "post-training-webinar"
+version = "0.1.0"
+description = "Post-training with Tinker: live demo notebooks"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "tinker",
+    "tinker-cookbook",
+    "datasets",
+    "sympy",
+    "pylatexenc",
+    "math-verify",
+    "nbformat",
+    "ipykernel",
+    "ipywidgets",
+]
+
+[tool.uv]
+package = false

@@ -4,7 +4,7 @@
     "rl": "tinker://4a1920a0-55d2-56af-a077-703581877e22:train:0/weights/rl"
   },
   "scores": {
-    "0. base model": 0.57,
+    "0. base model": 0.55,
     "2. SFT": 0.8,
     "4. RL (from SFT)": 0.88,
     "5a. OPD (35B-A3B teacher)": 0.89,
