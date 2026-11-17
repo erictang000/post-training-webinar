@@ -2,9 +2,9 @@
 Shared plumbing for the webinar. NOT live-coded.
 
 Everything in this file is boilerplate: clients, tokenization, data loading, eval.
-The section files (01_..05_) only contain the part that differs between methods:
+The section files (01_..04_) only contain the part that differs between methods:
   - where the tokens come from (dataset vs. sampled from the model)
-  - what signal each token gets in the loss (weight / advantage / custom loss)
+  - what signal each token gets in the loss (weight / advantage)
 """
 
 import json
@@ -12,9 +12,22 @@ import os
 import re
 from pathlib import Path
 
+# API key lookup order: $TINKER_API_KEY, then `.env` next to this file, then ~/.tinker_api_key.
+# (Kernels inherit env from whatever launched Jupyter, so a file is more reliable than `export`.)
+_ENV_FILE = Path(__file__).with_name(".env")
+if "TINKER_API_KEY" not in os.environ and _ENV_FILE.exists():
+    for _line in _ENV_FILE.read_text().splitlines():
+        _k, _sep, _v = _line.strip().removeprefix("export ").partition("=")
+        if _sep and _k.strip() == "TINKER_API_KEY":
+            os.environ["TINKER_API_KEY"] = _v.strip().strip("'\"")
 _KEY_FILE = Path("~/.tinker_api_key").expanduser()
 if "TINKER_API_KEY" not in os.environ and _KEY_FILE.exists():
     os.environ["TINKER_API_KEY"] = _KEY_FILE.read_text().strip()
+if not os.environ.get("TINKER_API_KEY"):
+    raise RuntimeError(
+        "TINKER_API_KEY not found. Set it in the environment, in .env next to common.py "
+        "(TINKER_API_KEY=...), or in ~/.tinker_api_key — then restart the kernel."
+    )
 
 import datasets
 import tinker
@@ -34,9 +47,8 @@ from tinker_cookbook.tokenizer_utils import get_tokenizer
 MODEL = "Qwen/Qwen3.5-4B"
 RENDERER = "qwen3_5_disable_thinking"
 
-# Distillation teachers must share the student's tokenizer (all Qwen3.5/3.6 models do).
+# The distillation teacher must share the student's tokenizer (all Qwen3.5/3.6 models do).
 MATH_TEACHER = "Qwen/Qwen3.6-35B-A3B"
-CHAT_TEACHER = "Qwen/Qwen3.5-397B-A17B"
 
 LORA_RANK = 32
 MAX_TOKENS = 256  # the budget: answers that don't finish in 256 tokens count as wrong
@@ -44,6 +56,28 @@ MAX_TOKENS = 256  # the budget: answers that don't finish in 256 tokens count as
 service_client = tinker.ServiceClient()
 tokenizer = get_tokenizer(MODEL)
 renderer = renderers.get_renderer(RENDERER, tokenizer)
+
+
+_TINKER_CLIENT = service_client
+BACKEND = "Tinker"
+
+
+def connect(base_url: str | None = None):
+    """None = Tinker's cloud. A URL = any server that speaks the Tinker API, e.g. SkyRL on your own GPUs.
+
+    SkyRL doesn't check the API key. Checkpoints and scores are kept per backend, so a SkyRL run
+    never overwrites the Tinker backups (and the Tinker `sft` checkpoint isn't visible on SkyRL).
+    """
+    global service_client, BACKEND
+    if base_url is None:
+        service_client, BACKEND = _TINKER_CLIENT, "Tinker"
+    else:
+        service_client, BACKEND = tinker.ServiceClient(base_url=base_url, api_key="tml-dummy"), "SkyRL"
+    print(f"Backend: {BACKEND}" + (f" at {base_url}" if base_url else ""))
+
+
+def _key(name: str) -> str:
+    return name if BACKEND == "Tinker" else f"{BACKEND} · {name}"
 
 
 def new_training_client(from_checkpoint: str | None = None) -> tinker.TrainingClient:
@@ -186,7 +220,7 @@ def eval_gsm8k(sampling_client: tinker.SamplingClient, n: int = 100, label: str 
         truncated += len(tokens) >= MAX_TOKENS
         correct += gsm8k_reward(renderers.get_text_content(renderer.parse_response(tokens)[0]), ans)
     acc = correct / n
-    print(f"GSM8K accuracy within {MAX_TOKENS} tokens{f' [{label}]' if label else ''}: {acc:.1%} "
+    print(f"GSM8K accuracy within {MAX_TOKENS} tokens{f' [{_key(label)}]' if label else ''}: {acc:.1%} "
           f"({int(correct)}/{n})   [{truncated} ran out of tokens]")
     record_score(label or "unnamed", acc)
     return acc
@@ -205,22 +239,22 @@ def _load_state() -> dict:
 def save_checkpoint(training_client: tinker.TrainingClient, name: str) -> str:
     path = training_client.save_state(name).result().path
     state = _load_state()
-    state["checkpoints"][name] = path
+    state["checkpoints"][_key(name)] = path
     STATE_FILE.write_text(json.dumps(state, indent=2))
-    print(f"saved '{name}' -> {path}")
+    print(f"saved '{_key(name)}' -> {path}")
     return path
 
 
 def load_checkpoint(name: str) -> str | None:
-    return _load_state()["checkpoints"].get(name)
+    return _load_state()["checkpoints"].get(_key(name))
 
 
 def record_score(label: str, acc: float):
     state = _load_state()
-    state["scores"][label] = acc
+    state["scores"][_key(label)] = acc
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
 def scoreboard():
     for label, acc in _load_state()["scores"].items():
-        print(f"  {label:<28} {acc:6.1%}  {'█' * int(acc * 50)}")
+        print(f"  {label:<36} {acc:6.1%}  {'█' * int(acc * 50)}")
